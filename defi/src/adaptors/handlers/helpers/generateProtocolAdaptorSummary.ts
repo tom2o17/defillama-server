@@ -4,14 +4,27 @@ import { IJSON, ProtocolAdaptor } from "../../data/types"
 import { AdaptorRecord, AdaptorRecordType, getAdaptorRecord } from "../../db-utils/adaptor-record"
 import { formatChain } from "../../utils/getAllChainsFromAdaptors"
 import { calcNdChange, getStatsByProtocolVersion, sumAllVolumes } from "../../utils/volumeCalcs"
-import { DEFAULT_CHART_BY_ADAPTOR_TYPE, IGeneralStats, ProtocolAdaptorSummary, ProtocolStats } from "../getOverview"
+import { IGeneralStats, ProtocolStats } from "../getOverview"
 import { ONE_DAY_IN_SECONDS } from "../getProtocol"
 import generateCleanRecords from "./generateCleanRecords"
 
-export default async (adapter: ProtocolAdaptor, adaptorType: AdapterType, chainFilter?: string, onError?: (e: Error) => Promise<void>): Promise<ProtocolAdaptorSummary> => {
+export type ProtocolAdaptorSummary = Pick<ProtocolAdaptor,
+    'name'
+    | 'disabled'
+    | 'displayName'
+    | 'chains'
+    | 'module'
+    | 'config'
+> & {
+    protocolsStats: ProtocolStats | null
+    records: AdaptorRecord[] | null
+    recordsMap: IJSON<AdaptorRecord> | null
+} & IGeneralStats
+
+export default async (adapter: ProtocolAdaptor, adaptorType: AdaptorRecordType, chainFilter?: string, onError?: (e: Error) => Promise<void>): Promise<ProtocolAdaptorSummary> => {
     try {
         // Get all records from db
-        let adaptorRecords = (await getAdaptorRecord(adapter.id, DEFAULT_CHART_BY_ADAPTOR_TYPE[adaptorType] as AdaptorRecordType))
+        let adaptorRecords = await getAdaptorRecord(adapter.id, adaptorType)
         // This check is made to infer AdaptorRecord[] type instead of AdaptorRecord type
         if (!(adaptorRecords instanceof Array)) throw new Error("Wrong volume queried")
 
@@ -54,6 +67,8 @@ export default async (adapter: ProtocolAdaptor, adaptorType: AdapterType, chainF
             disabled: adapter.disabled,
             displayName: adapter.displayName,
             module: adapter.module,
+            config: adapter.config,
+            chains: chainFilter ? [formatChain(chainFilter)] : adapter.chains,
             records: adaptorRecords,
             recordsMap: cleanRecords.cleanRecordsMap,
             change_1d: stats.change_1d,
@@ -61,10 +76,7 @@ export default async (adapter: ProtocolAdaptor, adaptorType: AdapterType, chainF
             change_1m: stats.change_1m,
             total24h: stats.total24h,
             breakdown24h: stats.breakdown24h,
-            config: adapter.config,
-            chains: chainFilter ? [formatChain(chainFilter)] : adapter.chains,
             protocolsStats: protocolVersions
-
         }
     } catch (error) {
         // TODO: handle better errors

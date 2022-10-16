@@ -1,8 +1,9 @@
-import { formatTimestampAsDate, getTimestampAtStartOfDayUTC } from "../../utils/date";
+import { getTimestampAtStartOfDayUTC } from "../../utils/date";
 import { IJSON, ProtocolAdaptor } from "../data/types";
 import { AdaptorRecord, IRecordAdaptorRecordData } from "../db-utils/adaptor-record";
-import { IGeneralStats, ProtocolAdaptorSummary } from "../handlers/getOverview";
+import { IGeneralStats, ProtocolAdaptorSummaryCombined } from "../handlers/getOverview";
 import { ONE_DAY_IN_SECONDS } from "../handlers/getProtocol";
+import { ProtocolAdaptorSummary } from "../handlers/helpers/generateProtocolAdaptorSummary";
 
 import getDataPoints from "./getDataPoints";
 
@@ -21,47 +22,54 @@ const sumAllVolumes = (breakdownVolumes: IRecordAdaptorRecordData, protVersion?:
 
 
 const getSumAllDexsToday = (
-    dexs: ProtocolAdaptorSummary[],
-    dex2Substract?: ProtocolAdaptorSummary,
-    baseTimestamp: number = (Date.now() / 1000) - ONE_DAY_IN_SECONDS
-): IGeneralStats => {
-    const yesterdaysTimestamp = getTimestampAtStartOfDayUTC(baseTimestamp);
-    const timestamp1d = yesterdaysTimestamp - ONE_DAY_IN_SECONDS * 1
-    const timestamp7d = yesterdaysTimestamp - ONE_DAY_IN_SECONDS * 7
-    const timestamp30d = yesterdaysTimestamp - ONE_DAY_IN_SECONDS * 30
-    let totalVolume = 0
-    let totalVolume1d = 0
-    let totalVolume7d = 0
-    let totalVolume30d = 0
-    let dex2SubstractVolumes: any = {}
-    for (const dex of dexs) {
-        if (dex2Substract) {
-            dex2SubstractVolumes['totalVolume'] = dex2Substract.records?.find(v => getTimestampAtStartOfDayUTC(v.timestamp) === yesterdaysTimestamp)?.data
-            dex2SubstractVolumes['totalVolume1d'] = dex2Substract.records?.find(v => getTimestampAtStartOfDayUTC(v.timestamp) === timestamp1d)?.data
-            dex2SubstractVolumes['totalVolume7d'] = dex2Substract.records?.find(v => getTimestampAtStartOfDayUTC(v.timestamp) === timestamp7d)?.data
-            dex2SubstractVolumes['totalVolume30d'] = dex2Substract.records?.find(v => getTimestampAtStartOfDayUTC(v.timestamp) === timestamp30d)?.data
+    dexs: ProtocolAdaptorSummaryCombined[],
+    dex2Substract?: ProtocolAdaptorSummaryCombined,
+    baseTimestamp: number = (Date.now() / 1000) - ONE_DAY_IN_SECONDS,
+): IJSON<IGeneralStats> => {
+    const recordsMap = dexs[0].recordsMap
+    if (!recordsMap) throw new Error("Unable to sum all records")
+    return Object.keys(recordsMap).reduce((acc, recordType) => {
+        const yesterdaysTimestamp = getTimestampAtStartOfDayUTC(baseTimestamp);
+        const timestamp1d = yesterdaysTimestamp - ONE_DAY_IN_SECONDS * 1
+        const timestamp7d = yesterdaysTimestamp - ONE_DAY_IN_SECONDS * 7
+        const timestamp30d = yesterdaysTimestamp - ONE_DAY_IN_SECONDS * 30
+        let totalVolume = 0
+        let totalVolume1d = 0
+        let totalVolume7d = 0
+        let totalVolume30d = 0
+        let dex2SubstractVolumes: any = {}
+        for (const dex of dexs) {
+            if (dex2Substract) {
+                dex2SubstractVolumes['totalVolume'] = dex2Substract.recordsMap[recordType]?.[String(yesterdaysTimestamp)]?.data
+                dex2SubstractVolumes['totalVolume1d'] = dex2Substract.recordsMap[recordType]?.[String(timestamp1d)]?.data
+                dex2SubstractVolumes['totalVolume7d'] = dex2Substract.recordsMap[recordType]?.[String(timestamp7d)]?.data
+                dex2SubstractVolumes['totalVolume30d'] = dex2Substract.recordsMap[recordType]?.[String(timestamp30d)]?.data
+            }
+            const yesterdaysVolume = dex.recordsMap[recordType]?.[String(yesterdaysTimestamp)]?.data
+            const volume1d = dex.recordsMap[recordType]?.[String(timestamp1d)]?.data
+            const volume7d = dex.recordsMap[recordType]?.[String(timestamp7d)]?.data
+            const volume30d = dex.recordsMap[recordType]?.[String(timestamp30d)]?.data
+            totalVolume += yesterdaysVolume ? sumAllVolumes(yesterdaysVolume) - sumAllVolumes(dex2SubstractVolumes['totalVolume']) : 0
+            totalVolume1d += volume1d ? sumAllVolumes(volume1d) - sumAllVolumes(dex2SubstractVolumes['totalVolume1d']) : 0
+            totalVolume7d += volume7d ? sumAllVolumes(volume7d) - sumAllVolumes(dex2SubstractVolumes['totalVolume7d']) : 0
+            totalVolume30d += volume30d ? sumAllVolumes(volume30d) - sumAllVolumes(dex2SubstractVolumes['totalVolume30d']) : 0
         }
-        const yesterdaysVolume = dex.records?.find(v => getTimestampAtStartOfDayUTC(v.timestamp) === yesterdaysTimestamp)?.data
-        const volume1d = dex.records?.find(v => getTimestampAtStartOfDayUTC(v.timestamp) === timestamp1d)?.data
-        const volume7d = dex.records?.find(v => getTimestampAtStartOfDayUTC(v.timestamp) === timestamp7d)?.data
-        const volume30d = dex.records?.find(v => getTimestampAtStartOfDayUTC(v.timestamp) === timestamp30d)?.data
-        totalVolume += yesterdaysVolume ? sumAllVolumes(yesterdaysVolume) - sumAllVolumes(dex2SubstractVolumes['totalVolume']) : 0
-        totalVolume1d += volume1d ? sumAllVolumes(volume1d) - sumAllVolumes(dex2SubstractVolumes['totalVolume1d']) : 0
-        totalVolume7d += volume7d ? sumAllVolumes(volume7d) - sumAllVolumes(dex2SubstractVolumes['totalVolume7d']) : 0
-        totalVolume30d += volume30d ? sumAllVolumes(volume30d) - sumAllVolumes(dex2SubstractVolumes['totalVolume30d']) : 0
-    }
-    return {
-        total24h: totalVolume,
-        change_1d: formatNdChangeNumber(((totalVolume - totalVolume1d) / totalVolume1d) * 100) ?? 0,
-        change_7d: formatNdChangeNumber(((totalVolume - totalVolume7d) / totalVolume7d) * 100) ?? 0,
-        change_1m: formatNdChangeNumber(((totalVolume - totalVolume30d) / totalVolume30d) * 100) ?? 0,
-        breakdown24h: null
-    }
+        return {
+            ...acc,
+            [recordType]: {
+                total24h: totalVolume,
+                change_1d: formatNdChangeNumber(((totalVolume - totalVolume1d) / totalVolume1d) * 100) ?? 0,
+                change_7d: formatNdChangeNumber(((totalVolume - totalVolume7d) / totalVolume7d) * 100) ?? 0,
+                change_1m: formatNdChangeNumber(((totalVolume - totalVolume30d) / totalVolume30d) * 100) ?? 0,
+                breakdown24h: null
+            }
+        }
+    }, {} as IJSON<IGeneralStats>)
 }
 
 export type IChartData = [string, number][] // [timestamp, volume]
 
-const generateAggregatedVolumesChartData = (protocols: ProtocolAdaptorSummary[]): IChartData => {
+const generateAggregatedVolumesChartData = (protocols: ProtocolAdaptorSummaryCombined[]): IChartData => {
     const chartData: IChartData = []
     const dataPoints = getDataPoints()
     for (const dataPoint of dataPoints) {

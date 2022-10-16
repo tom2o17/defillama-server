@@ -10,7 +10,7 @@ import { AdapterType } from "@defillama/adaptors/adapters/types";
 import { IRecordAdaptorRecordData } from "../../db-utils/adaptor-record";
 import { IJSON, ProtocolAdaptor } from "../../data/types";
 import loadAdaptorsData from "../../data"
-import generateProtocolAdaptorSummary from "../helpers/generateProtocolAdaptorSummary";
+import generateProtocolAdaptorSummary, { ProtocolAdaptorSummary } from "../helpers/generateProtocolAdaptorSummary";
 
 export interface IGeneralStats {
     total24h: number | null;
@@ -20,21 +20,29 @@ export interface IGeneralStats {
     breakdown24h: IRecordAdaptorRecordData | null
 }
 
-export type ProtocolAdaptorSummary = Pick<ProtocolAdaptor,
-    'name'
-    | 'disabled'
-    | 'displayName'
-    | 'chains'
-    | 'module'
-    | 'config'
-> & {
-    protocolsStats: ProtocolStats | null
-    records: AdaptorRecord[] | null
-    recordsMap: IJSON<AdaptorRecord> | null
-} & IGeneralStats
+export interface ProtocolAdaptorSummaryCombined extends Omit<
+    ProtocolAdaptorSummary,
+    'change_1d' |
+    'change_7d' |
+    'change_1m' |
+    'total24h' |
+    'breakdown24h' |
+    'protocolsStats' |
+    'records' |
+    'recordsMap'
+> {
+    change_1d: IJSON<ProtocolAdaptorSummary['change_1d']>
+    change_7d: IJSON<ProtocolAdaptorSummary['change_7d']>
+    change_1m: IJSON<ProtocolAdaptorSummary['change_1m']>
+    total24h: IJSON<ProtocolAdaptorSummary['total24h']>
+    breakdown24h: IJSON<ProtocolAdaptorSummary['breakdown24h']>
+    protocolsStats: IJSON<ProtocolAdaptorSummary['protocolsStats']>
+    records: IJSON<ProtocolAdaptorSummary['records']>
+    recordsMap: IJSON<ProtocolAdaptorSummary['recordsMap']>
+}
 
 type KeysToRemove = 'records' | 'module' | 'config' | 'recordsMap'
-type ProtocolsResponse = Omit<ProtocolAdaptorSummary, KeysToRemove>
+type ProtocolsResponse = Omit<ProtocolAdaptorSummaryCombined, KeysToRemove>
 export type IGetOverviewResponseBody = IGeneralStats & {
     totalDataChart: IChartData,
     totalDataChartBreakdown: IChartDataByDex,
@@ -44,9 +52,14 @@ export type IGetOverviewResponseBody = IGeneralStats & {
 
 export type ProtocolStats = (NonNullable<ProtocolAdaptor['protocolsData']>[string] & IGeneralStats)
 
-export const DEFAULT_CHART_BY_ADAPTOR_TYPE: IJSON<string> = {
+export const DEFAULT_CHART_BY_ADAPTOR_TYPE: IJSON<AdaptorRecordType> = {
     [AdapterType.VOLUME]: AdaptorRecordType.dailyVolumeRecord,
-    [AdapterType.FEES]: AdaptorRecordType.totalFeesRecord
+    [AdapterType.FEES]: AdaptorRecordType.dailyFeesRecord
+}
+
+export const DEFAULT_ATTRS_BY_ADAPTOR_TYPE: IJSON<AdaptorRecordType[]> = {
+    [AdapterType.VOLUME]: [AdaptorRecordType.dailyVolumeRecord],
+    [AdapterType.FEES]: [AdaptorRecordType.dailyFeesRecord, AdaptorRecordType.dailyRevenueRecord]
 }
 
 // -> /overview/volumes
@@ -55,7 +68,7 @@ export const DEFAULT_CHART_BY_ADAPTOR_TYPE: IJSON<string> = {
 // -> /overview/fees/ethereum
 export const handler = async (event: AWSLambda.APIGatewayEvent, enableAlerts: boolean = false): Promise<IResponse> => {
     const pathChain = event.pathParameters?.chain?.toLowerCase()
-    const adaptorType = event.pathParameters?.type?.toLowerCase() as AdapterType
+    const adaptorType = event.pathParameters?.type?.toLowerCase()
     const excludeTotalDataChart = event.queryStringParameters?.excludeTotalDataChart?.toLowerCase() === 'true'
     const excludeTotalDataChartBreakdown = event.queryStringParameters?.excludeTotalDataChartBreakdown?.toLowerCase() === 'true'
     const chainFilter = pathChain ? decodeURI(pathChain) : pathChain
@@ -63,15 +76,64 @@ export const handler = async (event: AWSLambda.APIGatewayEvent, enableAlerts: bo
     if (!adaptorType) throw new Error("Missing parameter")
 
     // Import data list
-    const adaptorsData = loadAdaptorsData(adaptorType)
+    const adaptorsData = loadAdaptorsData(adaptorType as AdapterType)
 
     const results = await allSettled(adaptorsData.default.filter(va => va.config?.enabled).map(async (adapter) => {
-        return generateProtocolAdaptorSummary(adapter, adaptorType, chainFilter, async (e) => {
-            console.error(e)
-            // TODO, move error handling to rejected promises
-            if (enableAlerts)
-                await sendDiscordAlert(e.message)
-        })
+        const allSumaries = await Promise.all(DEFAULT_ATTRS_BY_ADAPTOR_TYPE[adaptorType].map(async recordType => {
+            const summary = await generateProtocolAdaptorSummary(adapter, recordType, chainFilter, async (e) => {
+                console.error(e)
+                // TODO, move error handling to rejected promises
+                if (enableAlerts)
+                    await sendDiscordAlert(e.message)
+            })
+            return {
+                recordType,
+                summary
+            }
+        }))
+        return allSumaries.reduce<ProtocolAdaptorSummaryCombined>((acc, { recordType, summary }) => {
+            const aa = acc
+            return {
+                name: summary.name,
+                disabled: summary.disabled,
+                displayName: summary.displayName,
+                module: summary.module,
+                config: summary.config,
+                chains: summary.chains,
+                change_1d: {
+                    ...(acc.change_1d ? acc.change_1d : {}),
+                    [recordType]: summary.change_1d
+                },
+                change_7d: {
+                    ...(acc.change_7d ? acc.change_7d : {}),
+                    [recordType]: summary.change_7d
+                },
+                change_1m: {
+                    ...(acc.change_1m ? acc.change_1m : {}),
+                    [recordType]: summary.change_1m
+                },
+                total24h: {
+                    ...(acc.total24h ? acc.total24h : {}),
+                    [recordType]: summary.total24h
+                },
+                breakdown24h: {
+                    ...(acc.breakdown24h ? acc.breakdown24h : {}),
+                    [recordType]: summary.breakdown24h
+                },
+                protocolsStats: {
+                    ...(acc.protocolsStats ? acc.protocolsStats : {}),
+                    [recordType]: summary.protocolsStats
+                },
+                records: {
+                    ...(acc.records ? acc.records : {}),
+                    [recordType]: summary.records
+                },
+                recordsMap: {
+                    ...(acc.recordsMap ? acc.recordsMap : {}),
+                    [recordType]: summary.recordsMap
+                },
+            }
+        }, {} as ProtocolAdaptorSummaryCombined)
     }))
 
     // Handle rejected dexs
@@ -79,7 +141,7 @@ export const handler = async (event: AWSLambda.APIGatewayEvent, enableAlerts: bo
     rejectedDexs.forEach(console.error)
 
 
-    const okProtocols = results.map(fd => fd.status === "fulfilled" && fd.value.records !== null ? fd.value : undefined).filter(d => d !== undefined) as ProtocolAdaptorSummary[]
+    const okProtocols = results.map(fd => fd.status === "fulfilled" && fd.value.disabled !== undefined ? fd.value : undefined).filter(d => d !== undefined) as ProtocolAdaptorSummaryCombined[]
     const generalStats = getSumAllDexsToday(okProtocols.map(substractSubsetVolumes))
 
     let protocolsResponse: IGetOverviewResponseBody['protocols']
@@ -109,7 +171,7 @@ export const handler = async (event: AWSLambda.APIGatewayEvent, enableAlerts: bo
     } as IGetOverviewResponseBody, 10 * 60); // 10 mins cache
 };
 
-const substractSubsetVolumes = (dex: ProtocolAdaptorSummary, _index: number, dexs: ProtocolAdaptorSummary[], baseTimestamp?: number): ProtocolAdaptorSummary => {
+const substractSubsetVolumes = (dex: ProtocolAdaptorSummaryCombined, _index: number, dexs: ProtocolAdaptorSummaryCombined[], baseTimestamp?: number): ProtocolAdaptorSummaryCombined => {
     const includedVolume = dex.config?.includedVolume
     if (includedVolume && includedVolume.length > 0) {
         const includedSummaries = dexs.filter(dex => {
@@ -117,15 +179,16 @@ const substractSubsetVolumes = (dex: ProtocolAdaptorSummary, _index: number, dex
             if (!volumeAdapter) throw Error("No volumeAdapter found")
             includedVolume.includes(volumeAdapter)
         })
-        let computedSummary: ProtocolAdaptorSummary = dex
+        let computedSummary: ProtocolAdaptorSummaryCombined = dex
         for (const includedSummary of includedSummaries) {
             const newSum = getSumAllDexsToday([computedSummary], includedSummary, baseTimestamp)
+            const recordTypes = Object.keys(newSum)
             computedSummary = {
                 ...includedSummary,
-                total24h: newSum['total24h'],
-                change_1d: newSum['change_1d'],
-                change_7d: newSum['change_7d'],
-                change_1m: newSum['change_1m'],
+                total24h: recordTypes.reduce((acc, rt) => ({ ...acc, [rt]: newSum[rt]['total24h'] }), {}),
+                change_1d: recordTypes.reduce((acc, rt) => ({ ...acc, [rt]: newSum[rt]['change_1d'] }), {}),
+                change_7d: recordTypes.reduce((acc, rt) => ({ ...acc, [rt]: newSum[rt]['change_7d'] }), {}),
+                change_1m: recordTypes.reduce((acc, rt) => ({ ...acc, [rt]: newSum[rt]['change_1m'] }), {}),
             }
         }
         return computedSummary

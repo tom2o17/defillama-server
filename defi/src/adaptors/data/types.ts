@@ -4,7 +4,7 @@ import { Protocol } from "../../protocols/types"
 export interface ProtocolAdaptor extends Protocol {
     displayName: string
     config?: IConfig
-    disabled: boolean
+    disabled?: boolean
     protocolsData: IJSON<{
         chains: string[]
         disabled: boolean
