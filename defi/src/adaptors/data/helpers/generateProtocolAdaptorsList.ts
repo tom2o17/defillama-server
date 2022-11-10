@@ -15,7 +15,6 @@ function notUndefined<T>(x: T | undefined): x is T {
 }
 
 const chainData = Object.entries(chainCoingeckoIds).map(([key, obj]) => {
-    if (obj.cmcId ?? obj.chainId) return undefined
     return {
         ...obj,
         name: key,
@@ -24,7 +23,7 @@ const chainData = Object.entries(chainCoingeckoIds).map(([key, obj]) => {
         category: "Chain",
         logo: `${baseIconsUrl}/chains/rsz_${getLogoKey(key)}.jpg`
     }
-}).filter(c => c !== undefined) as unknown as Protocol[]
+}) as unknown as Protocol[]
 
 export type IImportsMap = IJSON<{ default: Adapter }>
 
