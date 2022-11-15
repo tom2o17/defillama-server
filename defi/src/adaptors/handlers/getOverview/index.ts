@@ -69,7 +69,8 @@ export const handler = async (event: AWSLambda.APIGatewayEvent, enableAlerts: bo
     const excludeTotalDataChart = event.queryStringParameters?.excludeTotalDataChart?.toLowerCase() === 'true'
     const excludeTotalDataChartBreakdown = event.queryStringParameters?.excludeTotalDataChartBreakdown?.toLowerCase() === 'true'
     const rawDataType = event.queryStringParameters?.dataType
-    const category = event.queryStringParameters?.category
+    const rawCategory = event.queryStringParameters?.category
+    const category = rawCategory === 'dexs' ? 'dexes' : rawCategory
     const fullChart = event.queryStringParameters?.fullChart?.toLowerCase() === 'true'
     const dataType = rawDataType ? AdaptorRecordTypeMap[rawDataType] : DEFAULT_CHART_BY_ADAPTOR_TYPE[adaptorType]
     const chainFilter = pathChain ? decodeURI(pathChain) : pathChain
@@ -88,7 +89,9 @@ export const handler = async (event: AWSLambda.APIGatewayEvent, enableAlerts: bo
     for (const type2load of adapters2load) {
         try {
             const adaptorsData = loadAdaptorsData(type2load)
-            allAdapters.push(...adaptorsData.default.filter(va => va.config?.enabled && (!category || va.category === category)))
+            allAdapters.push(...adaptorsData.default.filter(va => {
+                return va.config?.enabled && (!category || va.category?.toLowerCase() === category)
+            }))
         } catch (error) {
             console.error(error)
         }
