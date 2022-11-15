@@ -69,6 +69,7 @@ export const handler = async (event: AWSLambda.APIGatewayEvent, enableAlerts: bo
     const excludeTotalDataChart = event.queryStringParameters?.excludeTotalDataChart?.toLowerCase() === 'true'
     const excludeTotalDataChartBreakdown = event.queryStringParameters?.excludeTotalDataChartBreakdown?.toLowerCase() === 'true'
     const rawDataType = event.queryStringParameters?.dataType
+    const category = event.queryStringParameters?.category
     const fullChart = event.queryStringParameters?.fullChart?.toLowerCase() === 'true'
     const dataType = rawDataType ? AdaptorRecordTypeMap[rawDataType] : DEFAULT_CHART_BY_ADAPTOR_TYPE[adaptorType]
     const chainFilter = pathChain ? decodeURI(pathChain) : pathChain
@@ -76,8 +77,24 @@ export const handler = async (event: AWSLambda.APIGatewayEvent, enableAlerts: bo
     if (!adaptorType) throw new Error("Missing parameter")
 
     // Import data list
-    const adaptorsData = loadAdaptorsData(adaptorType)
-    const allAdapters = adaptorsData.default.filter(va => va.config?.enabled)
+    const adapters2load: AdapterType[] = []
+    const allAdapters: ProtocolAdaptor[] = []
+    // @ts-ignore: all is not a type
+    if (adaptorType === 'all') {
+        if (!dataType) throw new Error("Missing dataType parameter!")
+        adapters2load.push(...Object.values(AdapterType))
+    } else adapters2load.push(adaptorType)
+
+    for (const type2load of adapters2load) {
+        try {
+            const adaptorsData = loadAdaptorsData(type2load)
+            allAdapters.push(...adaptorsData.default.filter(va => va.config?.enabled && (!category || va.category === category)))
+        } catch (error) {
+            console.error(error)
+        }
+    }
+
+    console.log("allAdapters", allAdapters.length)
 
     const results = await allSettled(allAdapters.map(async (adapter) => {
         return generateProtocolAdaptorSummary(adapter, dataType, chainFilter, async (e) => {

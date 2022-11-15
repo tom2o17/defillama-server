@@ -5,10 +5,11 @@ import { formatTimestampAsDate } from "../../utils/date";
 import { performance } from "perf_hooks";
 
 const event = {
-    pathParameters: { chain: undefined, type: "fees" },
+    pathParameters: { chain: undefined, type: "all" },
     queryStringParameters: {
         excludeTotalDataChart: "true",
         excludeTotalDataChartBreakdown: "true",
+        dataType: "dailyVolume"
     }
 } as unknown as APIGatewayProxyEvent
 
@@ -17,7 +18,7 @@ const event = {
     const r = await handler(event)
     var endTime = performance.now()
     const rr = JSON.parse(r.body) as IGetOverviewResponseBody
-    console.log(rr.protocols.filter(d=>d.name.toLowerCase().includes('xdai') || d.name.toLowerCase().includes('gnosis')).map(p=>[p.name, p.displayName]))
+    console.log(rr.protocols.filter(p=>p.name.toLowerCase().includes('jupiter')))
     console.log("Current run:", (endTime - startTime) / 1000)
     /* for (const [time, datapoint] of rr.totalDataChartBreakdown) {
         console.log(formatTimestampAsDate(time), datapoint)
