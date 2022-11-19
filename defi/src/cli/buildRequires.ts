@@ -69,15 +69,23 @@ const importPaths = [
         baseFolderPath: "./adapters",
         folderPath: "incentives",
         excludeKeys: excludeKeys
+    },
+    {
+        basePackagePath: "@defillama/adaptors",
+        baseFolderPath: "./adapters",
+        folderPath: "protocols",
+        excludeKeys: excludeKeys
     }
 ]
 
 for (const importPath of importPaths) {
     const paths_keys = getDirectories(`${importPath.baseFolderPath}/${importPath.folderPath}`).map(removeDotTs).filter(key => !importPath.excludeKeys.includes(key))
-    writeFileSync(`./src/utils/imports/${importPath.folderPath.replace("/", "_")}_adapters.ts`,
-        `
-        import { Adapter } from "@defillama/adaptors/adapters/types";
-        export default {
-        ${paths_keys.map(path => `"${path}": require("${importPath.basePackagePath}/${importPath.folderPath}/${path}"),`).join('\n')}
-        } as {[key:string]: {default: Adapter} }`)
+    writeFileSync(
+        `./src/utils/imports/${importPath.folderPath.replace("/", "_")}_adapters.ts`,
+        `import { Adapter } from "@defillama/adaptors/adapters/types";
+export default {
+    ${paths_keys.map(path => `"${path}": require("${importPath.basePackagePath}/${importPath.folderPath}/${path}"),`).join('\n')}
+} as {[key:string]: {default: Adapter} }
+`
+    )
 }
