@@ -35,37 +35,37 @@ function removeDotTs(s: string) {
 const excludeKeys = ["index", "README"]
 const importPaths = [
     {
-        basePackagePath: "@defillama/adaptors", // how is defined in package.json
+        basePackagePath: "@defillama/dimension-adapters", // how is defined in package.json
         baseFolderPath: "./adapters", // path relative to current working directory -> `cd /defi`
         folderPath: "dexs", // path relative to baseFolderPath
         excludeKeys: excludeKeys
     },
     {
-        basePackagePath: "@defillama/adaptors",
+        basePackagePath: "@defillama/dimension-adapters",
         baseFolderPath: "./adapters",
         folderPath: "fees",
         excludeKeys: excludeKeys
     },
     {
-        basePackagePath: "@defillama/adaptors",
+        basePackagePath: "@defillama/dimension-adapters",
         baseFolderPath: "./adapters",
         folderPath: "aggregators",
         excludeKeys: excludeKeys
     },
     {
-        basePackagePath: "@defillama/adaptors",
+        basePackagePath: "@defillama/dimension-adapters",
         baseFolderPath: "./adapters",
         folderPath: "options",
         excludeKeys: excludeKeys
     },
     {
-        basePackagePath: "@defillama/adaptors",
+        basePackagePath: "@defillama/dimension-adapters",
         baseFolderPath: "./adapters",
         folderPath: "incentives",
         excludeKeys: excludeKeys
     },
     {
-        basePackagePath: "@defillama/adaptors",
+        basePackagePath: "@defillama/dimension-adapters",
         baseFolderPath: "./adapters",
         folderPath: "protocols",
         excludeKeys: excludeKeys
@@ -76,7 +76,7 @@ for (const importPath of importPaths) {
     const paths_keys = getDirectories(`${importPath.baseFolderPath}/${importPath.folderPath}`).map(removeDotTs).filter(key => !importPath.excludeKeys.includes(key))
     writeFileSync(`./src/utils/imports/${importPath.folderPath.replace("/", "_")}_adapters.ts`,
         `
-        import { Adapter } from "@defillama/adaptors/adapters/types";
+        import { Adapter } from "@defillama/dimension-adapters/adapters/types";
         export default {
         ${paths_keys.map(path => `"${path}": require("${importPath.basePackagePath}/${importPath.folderPath}/${path}"),`).join('\n')}
         } as {[key:string]: {default: Adapter} }`)
